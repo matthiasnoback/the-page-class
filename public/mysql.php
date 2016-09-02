@@ -5,37 +5,97 @@ use Doctrine\DBAL\DBALException;
 use Doctrine\DBAL\Driver\Statement;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
+use Doctrine\DBAL\Schema\Synchronizer\SingleDatabaseSynchronizer;
 
-/**
- * @var $connection Connection
- */
-global $connection;
-/**
- * @var $mysqlError DBALException
- */
-global $mysqlError;
-/**
- * @var $allResults array
- */
-global $allResults;
-$allResults = [];
+class ConnectionSingleton
+{
+    /**
+     * @var ConnectionSingleton|null
+     */
+    private static $instance;
 
-function mysql_connect() {
-    global $connection;
+    /**
+     * @var Connection|null
+     */
+    private $connection;
 
-    $dbPath = realpath('../data') . '/cms.sqlite';
-    unlink($dbPath);
-    $connection = DriverManager::getConnection([
-        'driver' => 'pdo_sqlite',
-        'path' => $dbPath
-    ]);
+    private $results = [];
+    private $latestErrorMessage;
 
-    createSchemaIfNotExists($connection);
+    /**
+     * @return ConnectionSingleton
+     */
+    public static function get()
+    {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
 
-    return true;
+        return self::$instance;
+    }
+
+    public function keepError(\Exception $error)
+    {
+        $this->latestErrorMessage = $error->getMessage();
+    }
+
+    public function latestErrorMessage()
+    {
+        return $this->latestErrorMessage;
+    }
+
+    public function keepResults(Statement $statement, array $results)
+    {
+        $this->results[spl_object_hash($statement)] = $results;
+    }
+
+    public function countResults(Statement $statement)
+    {
+        if (!isset($this->results[spl_object_hash($statement)])) {
+            return 0;
+        }
+
+        return count($this->results[spl_object_hash($statement)]);
+    }
+
+    private function __construct()
+    {
+    }
+
+    public function connection()
+    {
+        if ($this->connection === null) {
+            $dbPath = realpath('../data') . '/cms.sqlite';
+            $this->connection = DriverManager::getConnection([
+                'driver' => 'pdo_sqlite',
+                'path' => $dbPath
+            ]);
+
+            dropAndCreateSchema($this->connection);
+        }
+
+        return $this->connection;
+    }
+
+    public function fetchAssoc(Statement $statement)
+    {
+        if (!isset($this->results[spl_object_hash($statement)])
+            || count($this->results[spl_object_hash($statement)]) == 0) {
+            return false;
+        }
+
+        $row = array_shift($this->results[spl_object_hash($statement)]);
+
+        if (count($this->results[spl_object_hash($statement)]) == 0) {
+            unset($this->results[spl_object_hash($statement)]);
+        }
+
+        return $row;
+    }
 }
 
-function createSchemaIfNotExists(Connection $connection) {
+function dropAndCreateSchema(Connection $connection)
+{
     $schema = new Schema();
     $contentTable = $schema->createTable('content');
     $contentTable->addColumn('id', 'integer')->setAutoincrement(true);
@@ -56,99 +116,90 @@ function createSchemaIfNotExists(Connection $connection) {
     $contentTable->addColumn('contents', 'text')->setNotnull(false);
     $contentTable->setPrimaryKey(['id']);
 
-    $sqls = $schema->toSql($connection->getDatabasePlatform());
-    foreach ($sqls as $sql) {
-        $connection->executeQuery($sql);
-    }
-    
-    $connection->insert('content', [
-        'uri' => '',
-        'menu_name' => 'Home',
-        'title' => 'Home',
-        'parent_id' => 0,
-        'available_for_guests' => true,
-        'available_for_users' => true,
-        'available_for_admins' => true,
-        'priority' => 1,
-        'show_in_menu' => true,
-        'show_contents' => true,
-        'contents' => 'This is the homepage!'
-    ]);
-    $connection->insert('content', [
-        'uri' => 'about-me',
-        'menu_name' => 'About me',
-        'title' => 'About me',
-        'parent_id' => 0,
-        'available_for_guests' => true,
-        'available_for_users' => true,
-        'available_for_admins' => true,
-        'priority' => 2,
-        'show_in_menu' => true,
-        'show_contents' => true,
-        'contents' => 'I like to write code with PHP'
-    ]);
+    $schemaSynchronizer = new SingleDatabaseSynchronizer($connection);
+    $schemaSynchronizer->dropAllSchema();
+    $schemaSynchronizer->createSchema($schema);
+
+    (new FixtureFactory($connection))->populateDatabase();
 }
 
-function mysql_select_db() {
+class FixtureFactory
+{
+    /**
+     * @var Connection
+     */
+    private $connection;
+
+    public function __construct(Connection $connection)
+    {
+        $this->connection = $connection;
+    }
+
+    public function populateDatabase()
+    {
+        $this->connection->insert('content', [
+            'uri' => '',
+            'menu_name' => 'Home',
+            'title' => 'Home',
+            'parent_id' => 0,
+            'available_for_guests' => true,
+            'available_for_users' => true,
+            'available_for_admins' => true,
+            'priority' => 1,
+            'show_in_menu' => true,
+            'show_contents' => true,
+            'contents' => 'This is the homepage!'
+        ]);
+        $this->connection->insert('content', [
+            'uri' => 'about-me',
+            'menu_name' => 'About me',
+            'title' => 'About me',
+            'parent_id' => 0,
+            'available_for_guests' => true,
+            'available_for_users' => true,
+            'available_for_admins' => true,
+            'priority' => 2,
+            'show_in_menu' => true,
+            'show_contents' => true,
+            'contents' => 'I like to write code with PHP'
+        ]);
+    }
+}
+
+function mysql_connect()
+{
     return true;
 }
 
-function mysql_query($sql) {
-    global $connection;
-    global $allResults;
+function mysql_select_db()
+{
+    return true;
+}
 
+function mysql_query($sql)
+{
     try {
-        $stmt = $connection->query($sql);
-        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-        reset($rows);
-
-        $allResults[spl_object_hash($stmt)] = $rows;
+        $stmt = ConnectionSingleton::get()->connection()->query($sql);
+        ConnectionSingleton::get()->keepResults($stmt, $stmt->fetchAll(\PDO::FETCH_ASSOC));
     } catch (DBALException $exception) {
-        global $mysqlError;
-        $mysqlError = $exception;
-
+        ConnectionSingleton::get()->keepError($exception);
         return false;
     }
 
     return $stmt;
 }
 
-/**
- * @param Statement $stmt
- * @return int
- */
-function mysql_num_rows($stmt) {
-    global $allResults;
-
-    assert('$stmt instanceof ' . Statement::class);
-
-    return count($allResults[spl_object_hash($stmt)]);
+function mysql_num_rows($stmt)
+{
+    return ConnectionSingleton::get()->countResults($stmt);
 }
 
-/**
- * @param Statement $stmt
- * @return array
- */
-function mysql_fetch_assoc($stmt) {
-    global $allResults;
-
-    assert('$stmt instanceof ' . Statement::class);
-
-    if (!isset($allResults[spl_object_hash($stmt)])) {
-        return false;
-    }
-
-    $row = current($allResults[spl_object_hash($stmt)]);
-
-    if (!next($allResults[spl_object_hash($stmt)])) {
-        unset($allResults[spl_object_hash($stmt)]);
-    }
-
-    return $row;
+function mysql_fetch_assoc($stmt)
+{
+    return ConnectionSingleton::get()->fetchAssoc($stmt);
 }
 
-function mysql_error() {
-    global $mysqlError;
-
-    return $mysqlError->getMessage();
+function mysql_error()
+{
+    return ConnectionSingleton::get()->latestErrorMessage();
 }
