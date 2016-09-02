@@ -1,0 +1,31 @@
+{
+    "name": "matthiasnoback/the-page-class",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Matthias Noback",
+            "email": "matthiasnoback@gmail.com"
+        }
+    ],
+    "autoload-dev": {
+        "psr-4": {
+            "Test\\": "test/"
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "": "src/"
+        }
+    },
+    "require": {
+        "doctrine/dbal": "^2.5"
+    },
+    "require-dev": {
+        "phpunit/phpunit-mink-trait": "^1.0",
+        "phpunit/phpunit": "^5.5",
+        "symfony/var-dumper": "^3.1",
+        "behat/mink-goutte-driver": "^1.2",
+        "ciaranmcnulty/behat-localwebserverextension": "^1.1"
+    }
+}
