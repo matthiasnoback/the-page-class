@@ -13,7 +13,7 @@ class PageTest extends \PHPUnit_Framework_TestCase
 
     protected function baseUrl()
     {
-        return 'http://127.0.0.1:8000';
+        return 'http://127.0.0.1:8080';
     }
 
     protected function docRoot()
@@ -67,6 +67,9 @@ class PageTest extends \PHPUnit_Framework_TestCase
 
     private function assertSuccessfulResponse()
     {
-        $this->assertEquals(200, $this->session->getStatusCode());
+        $this->assertEquals(
+            200,
+            $this->session->getStatusCode(),
+            "Expected successful response, got: " . $this->session->getPage()->getContent());
     }
 }

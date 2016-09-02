@@ -2,6 +2,8 @@
 
 Clone this project, run `composer install`, then `vendor/bin/phpunit`.
 
+If you don't want to install extra dependencies on your machine, you can run `vagrant up`, then `vagrant ssh` and navigate to the project directory in `/vagrant`.
+
 The central class of this project is `Page`, which is a very basic, very crappy PHP CMS. Never use this code or part of it in a production application!
 
 This code base can be used to practice your "effectively working with legacy code" skill.
